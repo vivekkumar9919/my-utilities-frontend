@@ -4,6 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import SectionCard from './components/SectionCard';
 import AddItemModal from './components/AddItemModal';
 import DataManagement from './components/DataManagement';
+import Toast from './components/Toast';
+import ConfirmModal from './components/ConfirmModal';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import api from './api';
 import { useNavigate } from 'react-router-dom';
 
@@ -15,6 +18,15 @@ function VaultDashboard({ user, onLogout }) {
   const [activeCategory, setActiveCategory] = useState('All');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDataModalOpen, setIsDataModalOpen] = useState(false);
+  const [editingSection, setEditingSection] = useState(null);
+
+  // UI State
+  const [toast, setToast] = useState({ message: '', type: 'info', isVisible: false });
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', message: '', onConfirm: null });
+
+  const showToast = (message, type = 'info') => {
+    setToast({ message, type, isVisible: true });
+  };
 
   useEffect(() => {
     if (user) {
@@ -40,28 +52,37 @@ function VaultDashboard({ user, onLogout }) {
       const response = await api.post('/data/sections', { title, category });
       setSections([response.data, ...sections]);
       setActiveCategory(category);
+      showToast('Section added successfully', 'success');
     } catch (err) {
-      alert('Failed to add section');
+      showToast('Failed to add section', 'error');
     }
   };
 
-  const deleteSection = async (id) => {
-    if (window.confirm('Are you sure you want to delete this section?')) {
-      try {
-        await api.delete(`/data/sections/${id}`);
-        setSections(sections.filter(s => s._id !== id));
-      } catch (err) {
-        alert('Failed to delete section');
+  const deleteSection = (id) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Delete Section',
+      message: 'Are you sure you want to delete this section and all its items?',
+      onConfirm: async () => {
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        try {
+          await api.delete(`/data/sections/${id}`);
+          setSections(sections.filter(s => s._id !== id));
+          showToast('Section deleted successfully', 'success');
+        } catch (err) {
+          showToast('Failed to delete section', 'error');
+        }
       }
-    }
+    });
   };
 
-  const addItem = async (sectionId, label, value) => {
+  const addItem = async (sectionId, label, value, tag) => {
     try {
-      const response = await api.post(`/data/sections/${sectionId}/items`, { label, value });
+      const response = await api.post(`/data/sections/${sectionId}/items`, { label, value, tag });
       setSections(sections.map(s => s._id === sectionId ? response.data : s));
+      showToast('Item added successfully', 'success');
     } catch (err) {
-      alert('Failed to add item');
+      showToast('Failed to add item', 'error');
     }
   };
 
@@ -69,8 +90,71 @@ function VaultDashboard({ user, onLogout }) {
     try {
       const response = await api.delete(`/data/sections/${sectionId}/items/${itemId}`);
       setSections(sections.map(s => s._id === sectionId ? response.data : s));
+      showToast('Item deleted successfully', 'success');
     } catch (err) {
-      alert('Failed to delete item');
+      showToast('Failed to delete item', 'error');
+    }
+  };
+
+  const editSection = async (id, title, category) => {
+    try {
+      const response = await api.patch(`/data/sections/${id}`, { title, category });
+      setSections(sections.map(s => s._id === id ? response.data : s));
+      showToast('Section updated successfully', 'success');
+    } catch (err) {
+      showToast('Failed to update section', 'error');
+    }
+  };
+
+  const editItem = async (sectionId, itemId, label, value, tag) => {
+    try {
+      const response = await api.patch(`/data/sections/${sectionId}/items/${itemId}`, { label, value, tag });
+      setSections(sections.map(s => s._id === sectionId ? response.data : s));
+      showToast('Item updated successfully', 'success');
+    } catch (err) {
+      showToast('Failed to update item', 'error');
+    }
+  };
+
+  const onDragEnd = async (result) => {
+    if (!result.destination) return;
+
+    const sourceIndex = result.source.index;
+    const destinationIndex = result.destination.index;
+
+    if (sourceIndex === destinationIndex) return;
+
+    // We only reorder the currently filtered items on the UI to avoid jumpiness, 
+    // but the backend needs all IDs in their new order
+    const updatedFilteredSections = Array.from(filteredSections);
+    const [movedSection] = updatedFilteredSections.splice(sourceIndex, 1);
+    updatedFilteredSections.splice(destinationIndex, 0, movedSection);
+
+    // Reconstruct the full list of sections with the new order
+    // Because dragging only happens within the current category filter
+    const newSections = sections.map(s => {
+      const filteredIndex = updatedFilteredSections.findIndex(fs => fs._id === s._id);
+      return filteredIndex !== -1 ? updatedFilteredSections[filteredIndex] : s;
+    });
+
+    // Sort the new sections to match the filtered array order where applicable
+    // A simpler approach for the backend is just sending the section IDs in their current displayed order, 
+    // plus any hidden ones at the end.
+    const reorderedIds = [
+      ...updatedFilteredSections.map(s => s._id),
+      ...sections.filter(s => !updatedFilteredSections.find(fs => fs._id === s._id)).map(s => s._id)
+    ];
+
+    // Optimistically update the UI
+    setSections(
+      [...updatedFilteredSections, ...sections.filter(s => !updatedFilteredSections.find(fs => fs._id === s._id))]
+    );
+
+    try {
+      await api.put('/data/sections/reorder', { sectionIds: reorderedIds });
+    } catch (err) {
+      showToast('Failed to save new order', 'error');
+      fetchSections(); // Revert on failure
     }
   };
 
@@ -172,18 +256,52 @@ function VaultDashboard({ user, onLogout }) {
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <AnimatePresence mode="popLayout">
-                {filteredSections.map((section, index) => (
-                  <SectionCard 
-                    key={section._id} 
-                    section={section} 
-                    onDeleteItem={deleteItem}
-                    onAddItem={addItem}
-                    onDeleteSection={deleteSection}
-                    index={index}
-                  />
-                ))}
-              </AnimatePresence>
+              <DragDropContext onDragEnd={onDragEnd}>
+                <Droppable droppableId="vault-sections">
+                  {(provided) => (
+                    <div 
+                      {...provided.droppableProps}
+                      ref={provided.innerRef}
+                      style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}
+                    >
+                      <AnimatePresence mode="popLayout">
+                        {filteredSections.map((section, index) => (
+                          <Draggable key={section._id} draggableId={section._id} index={index}>
+                            {(provided, snapshot) => (
+                              <div
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                style={{
+                                  ...provided.draggableProps.style,
+                                  opacity: snapshot.isDragging ? 0.8 : 1,
+                                  transform: snapshot.isDragging ? `${provided.draggableProps.style.transform} scale(1.02)` : provided.draggableProps.style.transform,
+                                  zIndex: snapshot.isDragging ? 999 : 'auto',
+                                }}
+                              >
+                                <SectionCard 
+                                  section={section} 
+                                  onDeleteItem={deleteItem}
+                                  onAddItem={addItem}
+                                  onDeleteSection={deleteSection}
+                                  onEditSection={editSection}
+                                  onOpenEditSection={(sec) => {
+                                    setEditingSection(sec);
+                                    setIsModalOpen(true);
+                                  }}
+                                  onEditItem={editItem}
+                                  index={index}
+                                  dragHandleProps={provided.dragHandleProps}
+                                />
+                              </div>
+                            )}
+                          </Draggable>
+                        ))}
+                      </AnimatePresence>
+                      {provided.placeholder}
+                    </div>
+                  )}
+                </Droppable>
+              </DragDropContext>
 
               {!loading && filteredSections.length === 0 && (
                 <div style={{ textAlign: 'center', padding: '6rem 2rem', color: 'var(--text-muted)', border: '1px dashed var(--glass-border)', borderRadius: '1rem' }}>
@@ -197,8 +315,16 @@ function VaultDashboard({ user, onLogout }) {
 
       <AddItemModal 
         isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
-        onAdd={addSection}
+        onClose={() => {
+          setIsModalOpen(false);
+          setEditingSection(null);
+        }} 
+        onAdd={addSection} 
+        onEdit={(title, category) => {
+          editSection(editingSection._id, title, category);
+          setEditingSection(null);
+        }}
+        initialData={editingSection}
         categories={categories.filter(c => c !== 'All')}
         type="section"
       />
@@ -207,12 +333,27 @@ function VaultDashboard({ user, onLogout }) {
         isOpen={isDataModalOpen}
         onClose={() => setIsDataModalOpen(false)}
         data={sections}
-        onImport={(newData) => alert('Bulk import is currently disabled.')}
+        onImport={(newData) => showToast('Bulk import is currently disabled.', 'info')}
       />
       
       <footer style={{ marginTop: '6rem', textAlign: 'left', color: 'var(--text-muted)', paddingBottom: '4rem', borderTop: '1px solid var(--glass-border)', paddingTop: '3rem' }}>
         <p style={{ fontSize: '0.8rem', fontWeight: 600 }}>OmniVault v1.0 | Full-Stack Secured | Generic Asset Storage</p>
       </footer>
+
+      <Toast 
+        message={toast.message} 
+        type={toast.type} 
+        isVisible={toast.isVisible} 
+        onClose={() => setToast(prev => ({ ...prev, isVisible: false }))} 
+      />
+
+      <ConfirmModal
+        isOpen={confirmDialog.isOpen}
+        title={confirmDialog.title}
+        message={confirmDialog.message}
+        onConfirm={confirmDialog.onConfirm}
+        onCancel={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

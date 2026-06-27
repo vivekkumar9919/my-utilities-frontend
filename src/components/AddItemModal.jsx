@@ -2,17 +2,33 @@ import React, { useState } from 'react';
 import { X, ChevronDown, Plus } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const AddItemModal = ({ isOpen, onClose, onAdd, type, categories = [] }) => {
-  const [value, setValue] = useState('');
-  const [category, setCategory] = useState('General');
+const AddItemModal = ({ isOpen, onClose, onAdd, onEdit, initialData, categories = [] }) => {
+  const [value, setValue] = useState(initialData?.title || '');
+  const [category, setCategory] = useState(initialData?.category || 'General');
   const [isNewCategory, setIsNewCategory] = useState(false);
+
+  // Update state when initialData changes
+  React.useEffect(() => {
+    if (initialData) {
+      setValue(initialData.title || '');
+      setCategory(initialData.category || 'General');
+    } else {
+      setValue('');
+      setCategory('General');
+    }
+  }, [initialData, isOpen]);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e) => {
     e.preventDefault();
     if (value.trim()) {
-      onAdd(value.trim(), category.trim() || 'General');
+      const finalCategory = category.trim() || 'General';
+      if (initialData && onEdit) {
+        onEdit(value.trim(), finalCategory);
+      } else if (onAdd) {
+        onAdd(value.trim(), finalCategory);
+      }
       setValue('');
       setCategory('General');
       setIsNewCategory(false);
@@ -58,7 +74,7 @@ const AddItemModal = ({ isOpen, onClose, onAdd, type, categories = [] }) => {
             <X size={18} />
           </button>
 
-          <h3 style={{ fontSize: '1.75rem', marginBottom: '2rem', fontWeight: 800, letterSpacing: '-0.02em' }}>Create Section</h3>
+          <h3 style={{ fontSize: '1.75rem', marginBottom: '2rem', fontWeight: 800, letterSpacing: '-0.02em' }}>{initialData ? 'Edit Section' : 'Create Section'}</h3>
           
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.75rem' }}>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
@@ -102,9 +118,9 @@ const AddItemModal = ({ isOpen, onClose, onAdd, type, categories = [] }) => {
                     value={category}
                     onChange={(e) => setCategory(e.target.value)}
                   >
-                    <option value="General" style={{ background: '#1a1a1a' }}>General</option>
+                    <option value="General" style={{ background: 'var(--bg-secondary)' }}>General</option>
                     {categories.map(cat => (
-                      cat !== 'General' && <option key={cat} value={cat} style={{ background: '#1a1a1a' }}>{cat}</option>
+                      cat !== 'General' && <option key={cat} value={cat} style={{ background: 'var(--bg-secondary)' }}>{cat}</option>
                     ))}
                   </select>
                   <ChevronDown size={18} style={{ position: 'absolute', right: '1.1rem', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text-muted)' }} />
@@ -113,7 +129,7 @@ const AddItemModal = ({ isOpen, onClose, onAdd, type, categories = [] }) => {
             </div>
             
             <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '1.25rem', marginTop: '0.5rem', fontSize: '1rem', fontWeight: 700 }}>
-              Create Section
+              {initialData ? 'Save Changes' : 'Create Section'}
             </button>
           </form>
         </motion.div>

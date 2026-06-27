@@ -1,13 +1,30 @@
 import React, { useState } from 'react';
-import { Copy, Check, Trash2, Plus, ChevronDown, ChevronUp } from 'lucide-react';
+import { Copy, Check, Trash2, Plus, ChevronDown, ChevronUp, Pencil, GripVertical } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const SectionCard = ({ section, onAddItem, onDeleteItem, onDeleteSection, index }) => {
+const SectionCard = ({ section, onAddItem, onDeleteItem, onDeleteSection, onOpenEditSection, onEditItem, dragHandleProps, index }) => {
   const [isAdding, setIsAdding] = useState(false);
   const [isExpanded, setIsExpanded] = useState(index === 0); // Expand the first one by default
   const [newItemLabel, setNewItemLabel] = useState('');
   const [newItemValue, setNewItemValue] = useState('');
+  const [newItemTag, setNewItemTag] = useState('');
   const [copiedId, setCopiedId] = useState(null);
+
+  // Edit Item State
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [editItemLabel, setEditItemLabel] = useState('');
+  const [editItemValue, setEditItemValue] = useState('');
+  const [editItemTag, setEditItemTag] = useState('');
+
+  // Hash function to assign a consistent hue to a tag
+  const getTagColor = (tagStr) => {
+    if (!tagStr) return 'var(--accent)';
+    let hash = 0;
+    for (let i = 0; i < tagStr.length; i++) {
+      hash = tagStr.charCodeAt(i) + ((hash << 5) - hash);
+    }
+    return `hsl(${Math.abs(hash) % 360}, 70%, 50%)`;
+  };
 
   const handleCopy = (text, id) => {
     navigator.clipboard.writeText(text);
@@ -18,11 +35,27 @@ const SectionCard = ({ section, onAddItem, onDeleteItem, onDeleteSection, index 
   const handleAdd = (e) => {
     e.preventDefault();
     if (newItemLabel && newItemValue) {
-      onAddItem(section._id, newItemLabel, newItemValue);
+      onAddItem(section._id, newItemLabel, newItemValue, newItemTag);
       setNewItemLabel('');
       setNewItemValue('');
+      setNewItemTag('');
       setIsAdding(false);
     }
+  };
+
+  const handleEditItemSubmit = (e, itemId) => {
+    e.preventDefault();
+    if (editItemLabel && editItemValue) {
+      onEditItem(section._id, itemId, editItemLabel, editItemValue, editItemTag);
+      setEditingItemId(null);
+    }
+  };
+
+  const startEditingItem = (item) => {
+    setEditingItemId(item._id);
+    setEditItemLabel(item.label);
+    setEditItemValue(item.value);
+    setEditItemTag(item.tag || '');
   };
 
   return (
@@ -47,11 +80,28 @@ const SectionCard = ({ section, onAddItem, onDeleteItem, onDeleteSection, index 
           display: 'flex', 
           justifyContent: 'space-between', 
           alignItems: 'center',
-          cursor: 'pointer'
+          cursor: 'pointer',
+          paddingBottom: isExpanded ? '1rem' : '0',
+          borderBottom: isExpanded ? '1px solid var(--border-glass)' : '1px solid transparent',
+          transition: 'all 0.2s'
         }}
         onClick={() => setIsExpanded(!isExpanded)}
+        className="section-header"
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <div 
+            {...dragHandleProps} 
+            style={{ 
+              cursor: 'grab', 
+              display: 'flex', 
+              alignItems: 'center', 
+              color: 'var(--text-muted)',
+              marginRight: '-0.5rem'
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <GripVertical size={20} />
+          </div>
           <div style={{ 
             width: '32px', 
             height: '32px', 
@@ -75,7 +125,31 @@ const SectionCard = ({ section, onAddItem, onDeleteItem, onDeleteSection, index 
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <button 
             className="btn-icon btn-secondary" 
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              if (!isExpanded) setIsExpanded(true);
+              setIsAdding(true); 
+            }}
+            title="Add Item"
+            style={{ color: 'var(--text-primary)', padding: '0.4rem', background: 'none', border: 'none' }}
+          >
+            <Plus size={16} />
+          </button>
+          <button 
+            className="btn-icon btn-secondary" 
+            onClick={(e) => { 
+              e.stopPropagation(); 
+              onOpenEditSection(section);
+            }}
+            title="Edit Section"
+            style={{ color: 'var(--text-primary)', padding: '0.4rem', background: 'none', border: 'none' }}
+          >
+            <Pencil size={16} />
+          </button>
+          <button 
+            className="btn-icon btn-secondary" 
             onClick={(e) => { e.stopPropagation(); onDeleteSection(section._id); }}
+            title="Delete Section"
             style={{ color: 'var(--danger)', padding: '0.4rem', background: 'none', border: 'none' }}
           >
             <Trash2 size={16} />
@@ -105,10 +179,64 @@ const SectionCard = ({ section, onAddItem, onDeleteItem, onDeleteSection, index 
                     transition: 'all 0.2s'
                   }}
                 >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                      {item.label}
-                    </span>
+                  {editingItemId === item._id ? (
+                    <motion.form 
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      onSubmit={(e) => handleEditItemSubmit(e, item._id)} 
+                      style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}
+                    >
+                      <div style={{ display: 'flex', gap: '0.75rem' }}>
+                        <input 
+                          className="form-input"
+                          type="text" 
+                          placeholder="Label" 
+                          value={editItemLabel}
+                          onChange={(e) => setEditItemLabel(e.target.value)}
+                          style={{ flex: 2 }}
+                          autoFocus
+                        />
+                        <input 
+                          className="form-input"
+                          type="text" 
+                          placeholder="Tag" 
+                          value={editItemTag}
+                          onChange={(e) => setEditItemTag(e.target.value)}
+                          style={{ flex: 1 }}
+                        />
+                      </div>
+                      <textarea 
+                        className="form-input"
+                        placeholder="Value..." 
+                        value={editItemValue}
+                        onChange={(e) => setEditItemValue(e.target.value)}
+                        style={{ minHeight: '100px', resize: 'vertical' }}
+                      />
+                      <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.5rem' }}>
+                        <button type="submit" className="btn btn-primary flex-1">Save Changes</button>
+                        <button type="button" className="btn btn-secondary" onClick={() => setEditingItemId(null)}>Cancel</button>
+                      </div>
+                    </motion.form>
+                  ) : (
+                    <>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                      <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        {item.label}
+                      </span>
+                      {item.tag && (
+                        <span 
+                          className="tag-pill" 
+                          style={{ 
+                            backgroundColor: `${getTagColor(item.tag)}20`, // 20% opacity hex approximation
+                            color: getTagColor(item.tag),
+                            border: `1px solid ${getTagColor(item.tag)}40`
+                          }}
+                        >
+                          {item.tag}
+                        </span>
+                      )}
+                    </div>
                     <div style={{ display: 'flex', gap: '0.5rem' }}>
                       <button 
                         className="btn-icon btn-secondary"
@@ -121,52 +249,67 @@ const SectionCard = ({ section, onAddItem, onDeleteItem, onDeleteSection, index 
                       >
                         {copiedId === item._id ? <Check size={14} /> : <Copy size={14} />}
                       </button>
-                      <button 
-                        className="btn-icon btn-secondary"
-                        onClick={() => onDeleteItem(section._id, item._id)}
-                        style={{ color: 'var(--danger)', padding: '0.4rem', background: 'rgba(239, 68, 68, 0.05)' }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
+                        <button 
+                          className="btn-icon btn-secondary"
+                          onClick={() => startEditingItem(item)}
+                          style={{ color: 'var(--text-main)', padding: '0.4rem', background: 'rgba(255,255,255,0.05)' }}
+                          title="Edit Item"
+                        >
+                          <Pencil size={14} />
+                        </button>
+                        <button 
+                          className="btn-icon btn-secondary"
+                          onClick={() => onDeleteItem(section._id, item._id)}
+                          style={{ color: 'var(--danger)', padding: '0.4rem', background: 'rgba(239, 68, 68, 0.05)' }}
+                          title="Delete Item"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                  <p style={{ 
-                    fontSize: '0.9rem', 
-                    color: 'var(--text-main)', 
-                    whiteSpace: 'pre-wrap', 
-                    wordBreak: 'break-all',
-                    maxHeight: '120px',
-                    overflowY: 'auto',
-                    lineHeight: '1.5',
-                    opacity: 0.9
-                  }}>
-                    {item.value}
-                  </p>
+                    <p style={{ 
+                      fontSize: '0.9rem', 
+                      color: 'var(--text-main)', 
+                      whiteSpace: 'pre-wrap', 
+                      wordBreak: 'break-all',
+                      maxHeight: '120px',
+                      overflowY: 'auto',
+                      lineHeight: '1.5',
+                      opacity: 0.9
+                    }}>
+                      {item.value}
+                    </p>
+                  </>
+                )}
                 </div>
               ))}
 
-              {!isAdding ? (
-                <button 
-                  className="btn btn-secondary w-full justify-center border-dashed" 
-                  onClick={() => setIsAdding(true)}
-                >
-                  <Plus size={16} /> Add Item
-                </button>
-              ) : (
+              {isAdding && (
                 <motion.form 
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
                   onSubmit={handleAdd} 
                   style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}
                 >
-                  <input 
-                    className="form-input"
-                    type="text" 
-                    placeholder="Label (e.g. Portfolio)" 
-                    value={newItemLabel}
-                    onChange={(e) => setNewItemLabel(e.target.value)}
-                    autoFocus
-                  />
+                  <div style={{ display: 'flex', gap: '0.75rem' }}>
+                    <input 
+                      className="form-input"
+                      type="text" 
+                      placeholder="Label (e.g. Portfolio)" 
+                      value={newItemLabel}
+                      onChange={(e) => setNewItemLabel(e.target.value)}
+                      style={{ flex: 2 }}
+                      autoFocus
+                    />
+                    <input 
+                      className="form-input"
+                      type="text" 
+                      placeholder="Tag (optional)" 
+                      value={newItemTag}
+                      onChange={(e) => setNewItemTag(e.target.value)}
+                      style={{ flex: 1 }}
+                    />
+                  </div>
                   <textarea 
                     className="form-input"
                     placeholder="Value or Template..." 

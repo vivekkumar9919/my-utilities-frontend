@@ -1014,7 +1014,7 @@ tr:hover .edit-trigger-btn {
    OmniVault Dashboard & Component Styles
    ========================================================================== */
 .glass {
-  background: var(--bg-card);
+  background: var(--bg-glass);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--border-glass);
@@ -1024,7 +1024,7 @@ tr:hover .edit-trigger-btn {
 
 .glass:hover {
   border-color: rgba(255, 255, 255, 0.2);
-  background: rgba(22, 22, 28, 0.9);
+  background: var(--bg-secondary);
 }
 
 .layout-grid {
@@ -1097,6 +1097,16 @@ tr:hover .edit-trigger-btn {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--glow-color);
   background: rgba(255, 255, 255, 0.05);
+}
+
+.tag-pill {
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.15rem 0.5rem;
+  border-radius: 100px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: inline-block;
 }
 
 .category-btn {
